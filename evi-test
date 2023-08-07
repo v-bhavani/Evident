@@ -1,0 +1,95 @@
+#!/bin/bash
+
+##=======================================================================================================================================================================
+##---Begin of Input Parameters---------#
+##=======================================================================================================================================================================
+storageaccountname="evitest"
+containername="spdfullbackup"
+saskeystring="sp=racwl&st=2023-08-04T13:28:27Z&se=2023-08-06T21:28:27Z&sv=2022-11-02&sr=c&sig=0531WJVDAhvI9JLHgtkDfwaPAWu9Jqg%2F9uLMHJmC3oU%3D"
+srclocation="/db2/SPD/backup/SPD/"  ##Ends with /
+templocation="/db2/SPD/backup/SPD/DB_SPD_FullBackup_$(date +"%d_%m_%y")" ##Scriptwillcreate
+temp2location="/db2/SPD/backup/old_Fullbackup_SPD/" ##Ends with /
+owner="root" ##db2spd
+group="root" ##dbspdadm
+##=======================================================================================================================================================================
+##--- Function for printing the result
+##=======================================================================================================================================================================
+printresult() {
+  local functionName="$1"
+  local returnMessage="$2"
+
+  local line="------------------------------------------------------------------------------"
+  local dateTime="Date/Time: $(date)"
+  local paddedDateTime=$(printf "%-78s" "$dateTime")
+  local functionLine=" ${functionName} - ${returnMessage} "
+
+  printf "%s\n" "$line"
+  printf "| %s |\n" "$paddedDateTime"
+  printf "%s\n" "$functionLine"
+  printf "%s\n" "$line"
+}
+
+
+##=======================================================================================================================================================================
+##--- End of Input Parameters--------#
+##=======================================================================================================================================================================
+
+initialize_dir()
+{
+    functionName="Initializing the Temporary Location"
+    if [ ! -d "$temp2location" ]; then
+        echo "$temp2location directory doesnot exist, Please validate the directory. Exiting1"
+        exit
+    fi
+
+    if [ ! -d "$templocation" ]; then
+                echo "$templocation does not exist"
+                echo "creating $templocation"
+                if mkdir "$templocation" ; then
+                        chown $owner:$group $templocation
+                        printresult "Initializing the Temporary Location" "Success"
+                else
+                        printresult "Initializing the Temporary Location" "Failed"
+               fi
+        else
+                echo "$templocation directory exist, Please validate the files. Exiting2"
+                exit
+    fi
+}
+
+##=======================================================================================================================================================================
+##--- Moving Files to Temporary Location--------#
+##=======================================================================================================================================================================
+
+movingfiles()
+{
+    /usr/bin/find $srclocation -type f -exec mv {} $templocation \; 2> /dev/null
+}
+
+##=======================================================================================================================================================================
+##--- Moving Files to Temporary Location--------#
+##=======================================================================================================================================================================
+
+copyblob()
+{
+    functionName="Copying Files to Azure Blob"
+    azcopy copy $templocation "https://$storageaccountname.blob.core.windows.net/$containername?$saskeystring" --recursive
+    if [ $? == 0 ]; then
+        echo "Copy to blob is successful"
+        printresult "Copying Files to Azure Blob" "Success"
+        #mkdir -p /$temp2location/old_backup
+        mv $srclocation/* $temp2location
+        echo "Blob copy is successful and moved the files to temporary location, Success."
+    else
+        echo -ne "\n Copy to blob is Failed and the Files are in the $templocation , Exiting3 \n"
+        printresult "Copying Files to Azure Blob" "Failed"
+    fi
+}
+
+
+##=======================================================================================================================================================================
+#--- It call all the function one by one
+##=======================================================================================================================================================================
+initialize_dir
+movingfiles
+copyblob
